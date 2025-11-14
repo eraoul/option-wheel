@@ -1,0 +1,61 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Trade represents individual option trades (puts or calls)
+model Trade {
+  id          String   @id @default(cuid())
+  ticker      String
+  type        String   // "PUT" or "CALL"
+  strike      Float
+  expiration  DateTime
+  premium     Float    // Premium collected per contract
+  quantity    Int      // Number of contracts
+  openDate    DateTime @default(now())
+  closeDate   DateTime?
+  closePremium Float?  // Premium paid to close (if applicable)
+  status      String   @default("OPEN") // "OPEN", "CLOSED", "ASSIGNED", "EXPIRED"
+  notes       String?
+
+  // Relationships
+  positionId  String?
+  position    Position? @relation(fields: [positionId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ticker])
+  @@index([status])
+  @@index([expiration])
+}
+
+// Position represents stock positions (from assignments or direct purchases)
+model Position {
+  id              String   @id @default(cuid())
+  ticker          String
+  shares          Int      // Number of shares (in lots of 100)
+  costBasis       Float    // Total cost basis for the shares
+  acquiredDate    DateTime
+  soldDate        DateTime?
+  soldPrice       Float?   // Price per share when sold
+  status          String   @default("OPEN") // "OPEN", "SOLD"
+  acquisitionType String   // "ASSIGNED_PUT", "ASSIGNED_CALL", "DIRECT_PURCHASE"
+  notes           String?
+
+  // Relationships
+  trades          Trade[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([ticker])
+  @@index([status])
+}
