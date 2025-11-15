@@ -10,7 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import type { Trade } from '@/lib/types';
+import type { Trade, CurrentPrice } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Repeat, X } from 'lucide-react';
 import { TradeForm } from './trade-form';
@@ -24,24 +24,37 @@ interface TradeListProps {
 
 export function TradeList({ limit, refreshKey }: TradeListProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [prices, setPrices] = useState<Record<string, CurrentPrice>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [closingTrade, setClosingTrade] = useState<Trade | null>(null);
   const [rollingTrade, setRollingTrade] = useState<Trade | null>(null);
 
   useEffect(() => {
-    fetchTrades();
+    fetchData();
   }, [limit, refreshKey]);
 
-  const fetchTrades = async () => {
+  const fetchData = async () => {
     try {
-      const response = await fetch('/api/trades');
-      if (response.ok) {
-        const data = await response.json();
+      // Fetch trades
+      const tradesResponse = await fetch('/api/trades');
+      if (tradesResponse.ok) {
+        const data = await tradesResponse.json();
         setTrades(limit ? data.slice(0, limit) : data);
+
+        // Fetch prices for all tickers
+        const pricesResponse = await fetch('/api/prices');
+        if (pricesResponse.ok) {
+          const pricesData = await pricesResponse.json();
+          const pricesMap: Record<string, CurrentPrice> = {};
+          pricesData.forEach((price: CurrentPrice) => {
+            pricesMap[price.ticker] = price;
+          });
+          setPrices(pricesMap);
+        }
       }
     } catch (error) {
-      console.error('Failed to fetch trades:', error);
+      console.error('Failed to fetch data:', error);
     } finally {
       setIsLoading(false);
     }
@@ -51,7 +64,7 @@ export function TradeList({ limit, refreshKey }: TradeListProps) {
     setEditingTrade(null);
     setClosingTrade(null);
     setRollingTrade(null);
-    fetchTrades();
+    fetchData();
   };
 
   const formatCurrency = (value: number) => {
@@ -110,6 +123,36 @@ export function TradeList({ limit, refreshKey }: TradeListProps) {
     return collected - paid;
   };
 
+  const calculateDTE = (expirationDate: string) => {
+    const now = new Date();
+    const exp = new Date(expirationDate);
+    const days = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.max(0, days);
+  };
+
+  const calculateUnrealizedPnL = (trade: Trade) => {
+    if (trade.status !== 'OPEN') return null;
+
+    const price = prices[trade.ticker];
+    if (!price || !price.optionPrice) return null;
+
+    // For SELL_TO_OPEN: profit if current price < premium collected
+    // For BUY_TO_OPEN: profit if current price > premium paid
+    const premiumValue = trade.premium * trade.quantity * 100;
+    const currentValue = price.optionPrice * trade.quantity * 100;
+
+    let unrealizedPnL: number;
+    if (trade.action === 'SELL_TO_OPEN' || trade.action === 'SELL_TO_CLOSE') {
+      // Sold option: profit if current price is lower
+      unrealizedPnL = premiumValue - currentValue;
+    } else {
+      // Bought option: profit if current price is higher
+      unrealizedPnL = currentValue - premiumValue;
+    }
+
+    return unrealizedPnL;
+  };
+
   if (isLoading) {
     return <div className="text-center py-4">Loading trades...</div>;
   }
@@ -133,70 +176,87 @@ export function TradeList({ limit, refreshKey }: TradeListProps) {
               <TableHead>Action</TableHead>
               <TableHead>Strike</TableHead>
               <TableHead>Expiration</TableHead>
+              <TableHead>DTE</TableHead>
               <TableHead>Premium</TableHead>
               <TableHead>Qty</TableHead>
               <TableHead>Total</TableHead>
+              <TableHead>Unrealized P/L</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {trades.map((trade) => (
-              <TableRow key={trade.id}>
-                <TableCell className="font-medium">{trade.ticker}</TableCell>
-                <TableCell>
-                  <Badge variant={trade.type === 'PUT' ? 'default' : 'secondary'}>
-                    {trade.type}
-                  </Badge>
-                </TableCell>
-                <TableCell>{getActionBadge(trade.action)}</TableCell>
-                <TableCell>${trade.strike}</TableCell>
-                <TableCell>{formatDate(trade.expiration)}</TableCell>
-                <TableCell>${trade.premium.toFixed(2)}</TableCell>
-                <TableCell>{trade.quantity}</TableCell>
-                <TableCell className="font-medium">
-                  <div>{formatCurrency(calculatePremiumCollected(trade))}</div>
-                  {trade.closePremium !== null && trade.closePremium !== undefined && (
-                    <div className={`text-xs ${calculateNetPnL(trade) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      P/L: {formatCurrency(calculateNetPnL(trade))}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>{getStatusBadge(trade.status)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditingTrade(trade)}
-                      title="Edit trade"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    {trade.status === 'OPEN' && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setRollingTrade(trade)}
-                          title="Roll trade"
-                        >
-                          <Repeat className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setClosingTrade(trade)}
-                          title="Close trade"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </>
+            {trades.map((trade) => {
+              const dte = calculateDTE(trade.expiration);
+              const unrealizedPnL = calculateUnrealizedPnL(trade);
+
+              return (
+                <TableRow key={trade.id}>
+                  <TableCell className="font-medium">{trade.ticker}</TableCell>
+                  <TableCell>
+                    <Badge variant={trade.type === 'PUT' ? 'default' : 'secondary'}>
+                      {trade.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{getActionBadge(trade.action)}</TableCell>
+                  <TableCell>${trade.strike}</TableCell>
+                  <TableCell>{formatDate(trade.expiration)}</TableCell>
+                  <TableCell>{dte}d</TableCell>
+                  <TableCell>${trade.premium.toFixed(2)}</TableCell>
+                  <TableCell>{trade.quantity}</TableCell>
+                  <TableCell className="font-medium">
+                    <div>{formatCurrency(calculatePremiumCollected(trade))}</div>
+                    {trade.closePremium !== null && trade.closePremium !== undefined && (
+                      <div className={`text-xs ${calculateNetPnL(trade) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        P/L: {formatCurrency(calculateNetPnL(trade))}
+                      </div>
                     )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell>
+                    {unrealizedPnL !== null ? (
+                      <span className={unrealizedPnL >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                        {formatCurrency(unrealizedPnL)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{getStatusBadge(trade.status)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingTrade(trade)}
+                        title="Edit trade"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {trade.status === 'OPEN' && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setRollingTrade(trade)}
+                            title="Roll trade"
+                          >
+                            <Repeat className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setClosingTrade(trade)}
+                            title="Close trade"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

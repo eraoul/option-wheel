@@ -8,12 +8,13 @@ import { PositionForm } from '@/components/position-form';
 import { TradeList } from '@/components/trade-list';
 import { PositionList } from '@/components/position-list';
 import { TickerAnalytics } from '@/components/ticker-analytics';
+import { AccountSettings } from '@/components/account-settings';
 import type { PortfolioMetrics } from '@/lib/types';
 import { PlusCircle, TrendingUp, DollarSign, Target, Percent } from 'lucide-react';
 
 export default function Home() {
   const [metrics, setMetrics] = useState<PortfolioMetrics | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'trades' | 'positions' | 'analytics'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'trades' | 'positions' | 'analytics' | 'settings'>('overview');
   const [showTradeForm, setShowTradeForm] = useState(false);
   const [showPositionForm, setShowPositionForm] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -96,6 +97,13 @@ export default function Home() {
             className="rounded-b-none"
           >
             Analytics
+          </Button>
+          <Button
+            variant={activeTab === 'settings' ? 'default' : 'ghost'}
+            onClick={() => setActiveTab('settings')}
+            className="rounded-b-none"
+          >
+            Settings
           </Button>
         </div>
 
@@ -233,6 +241,14 @@ export default function Home() {
           <div className="space-y-6">
             <h2 className="text-2xl font-bold">Analytics by Ticker</h2>
             <TickerAnalytics />
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold">Account Settings</h2>
+            <AccountSettings />
           </div>
         )}
       </main>
