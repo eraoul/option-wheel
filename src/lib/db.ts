@@ -14,6 +14,7 @@ export function initDatabase() {
       id TEXT PRIMARY KEY,
       ticker TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('PUT', 'CALL')),
+      action TEXT NOT NULL DEFAULT 'SELL_TO_OPEN' CHECK(action IN ('SELL_TO_OPEN', 'BUY_TO_CLOSE', 'BUY_TO_OPEN', 'SELL_TO_CLOSE')),
       strike REAL NOT NULL,
       expiration TEXT NOT NULL,
       premium REAL NOT NULL,
@@ -21,12 +22,17 @@ export function initDatabase() {
       open_date TEXT NOT NULL,
       close_date TEXT,
       close_premium REAL,
-      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'CLOSED', 'ASSIGNED', 'EXPIRED')),
+      close_method TEXT CHECK(close_method IN ('BUYBACK', 'ROLL', 'EXPIRED', 'ASSIGNED')),
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'CLOSED', 'ASSIGNED', 'EXPIRED', 'ROLLED')),
       notes TEXT,
       position_id TEXT,
+      rolled_to_trade_id TEXT,
+      rolled_from_trade_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE SET NULL
+      FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE SET NULL,
+      FOREIGN KEY (rolled_to_trade_id) REFERENCES trades(id) ON DELETE SET NULL,
+      FOREIGN KEY (rolled_from_trade_id) REFERENCES trades(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS positions (
@@ -50,6 +56,41 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_positions_ticker ON positions(ticker);
     CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
   `);
+
+  // Migrate existing database if needed
+  migrateDatabase();
+}
+
+// Migrate existing database to add new columns
+function migrateDatabase() {
+  try {
+    // Check if action column exists
+    const columnsResult = db.prepare("PRAGMA table_info(trades)").all() as any[];
+    const hasAction = columnsResult.some(col => col.name === 'action');
+
+    if (!hasAction) {
+      // Add new columns to existing trades table
+      db.exec(`
+        ALTER TABLE trades ADD COLUMN action TEXT DEFAULT 'SELL_TO_OPEN';
+        ALTER TABLE trades ADD COLUMN close_method TEXT;
+        ALTER TABLE trades ADD COLUMN rolled_to_trade_id TEXT;
+        ALTER TABLE trades ADD COLUMN rolled_from_trade_id TEXT;
+      `);
+
+      // Update existing trades to set default action based on status
+      db.prepare(`
+        UPDATE trades
+        SET action = CASE
+          WHEN status = 'CLOSED' THEN 'SELL_TO_OPEN'
+          ELSE 'SELL_TO_OPEN'
+        END
+        WHERE action IS NULL
+      `).run();
+    }
+  } catch (error) {
+    // Columns might already exist, ignore error
+    console.log('Migration note:', error);
+  }
 }
 
 // Initialize on import

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTrade, updateTrade, deleteTrade, closeTrade, assignTrade } from '@/lib/db-operations';
+import { getTrade, updateTrade, deleteTrade, closeTrade, assignTrade, closeTradeWithMethod, rollTrade } from '@/lib/db-operations';
 
 export async function GET(
   request: NextRequest,
@@ -37,6 +37,21 @@ export async function PATCH(
     if (data.action === 'close' && data.closePremium !== undefined) {
       const updated = closeTrade(id, data.closePremium);
       return NextResponse.json(updated);
+    }
+
+    if (data.action === 'closeWithMethod') {
+      const updated = closeTradeWithMethod(
+        id,
+        data.closeMethod,
+        data.closePremium,
+        data.positionId
+      );
+      return NextResponse.json(updated);
+    }
+
+    if (data.action === 'roll' && data.newTradeData) {
+      const result = rollTrade(id, data.newTradeData);
+      return NextResponse.json(result);
     }
 
     if (data.action === 'assign' && data.positionId) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,18 +19,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { TradeFormData, TradeType } from '@/lib/types';
+import type { TradeFormData, TradeType, TradeAction, Trade } from '@/lib/types';
 
 interface TradeFormProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  editTrade?: Trade | null;
 }
 
-export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
+export function TradeForm({ open, onClose, onSuccess, editTrade }: TradeFormProps) {
   const [formData, setFormData] = useState<TradeFormData>({
     ticker: '',
     type: 'PUT',
+    action: 'SELL_TO_OPEN',
     strike: 0,
     expiration: '',
     premium: 0,
@@ -40,35 +42,67 @@ export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/trades', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+  useEffect(() => {
+    if (editTrade) {
+      setFormData({
+        ticker: editTrade.ticker,
+        type: editTrade.type,
+        action: editTrade.action,
+        strike: editTrade.strike,
+        expiration: editTrade.expiration.split('T')[0], // Convert to date format
+        premium: editTrade.premium,
+        quantity: editTrade.quantity,
+        notes: editTrade.notes || '',
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to create trade');
-      }
-
-      onSuccess();
+    } else {
       setFormData({
         ticker: '',
         type: 'PUT',
+        action: 'SELL_TO_OPEN',
         strike: 0,
         expiration: '',
         premium: 0,
         quantity: 1,
         notes: '',
       });
+    }
+  }, [editTrade, open]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const url = editTrade ? `/api/trades/${editTrade.id}` : '/api/trades';
+      const method = editTrade ? 'PATCH' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || `Failed to ${editTrade ? 'update' : 'create'} trade`);
+      }
+
+      onSuccess();
+      if (!editTrade) {
+        setFormData({
+          ticker: '',
+          type: 'PUT',
+          action: 'SELL_TO_OPEN',
+          strike: 0,
+          expiration: '',
+          premium: 0,
+          quantity: 1,
+          notes: '',
+        });
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create trade');
+      setError(err instanceof Error ? err.message : `Failed to ${editTrade ? 'update' : 'create'} trade`);
     } finally {
       setIsSubmitting(false);
     }
@@ -76,11 +110,11 @@ export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[525px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add Option Trade</DialogTitle>
+          <DialogTitle>{editTrade ? 'Edit' : 'Add'} Option Trade</DialogTitle>
           <DialogDescription>
-            Record a new cash-secured put or covered call trade
+            {editTrade ? 'Update' : 'Record'} an option trade (put or call)
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -109,7 +143,7 @@ export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="type" className="text-right">
-                Type
+                Option Type
               </Label>
               <Select
                 value={formData.type}
@@ -121,8 +155,30 @@ export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PUT">Cash-Secured Put (CSP)</SelectItem>
-                  <SelectItem value="CALL">Covered Call (CC)</SelectItem>
+                  <SelectItem value="PUT">Put</SelectItem>
+                  <SelectItem value="CALL">Call</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="action" className="text-right">
+                Action
+              </Label>
+              <Select
+                value={formData.action}
+                onValueChange={(value: TradeAction) =>
+                  setFormData({ ...formData, action: value })
+                }
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SELL_TO_OPEN">Sell to Open (STO)</SelectItem>
+                  <SelectItem value="BUY_TO_CLOSE">Buy to Close (BTC)</SelectItem>
+                  <SelectItem value="BUY_TO_OPEN">Buy to Open (BTO)</SelectItem>
+                  <SelectItem value="SELL_TO_CLOSE">Sell to Close (STC)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -178,13 +234,13 @@ export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
                 required
               />
               <div className="col-start-2 col-span-3 text-xs text-muted-foreground">
-                Premium per share (will be multiplied by 100 shares per contract)
+                Premium per share (x100 per contract)
               </div>
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="quantity" className="text-right">
-                Quantity
+                Contracts
               </Label>
               <Input
                 id="quantity"
@@ -199,7 +255,7 @@ export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
                 required
               />
               <div className="col-start-2 col-span-3 text-xs text-muted-foreground">
-                Number of contracts (each contract = 100 shares)
+                Each contract = 100 shares
               </div>
             </div>
 
@@ -223,7 +279,7 @@ export function TradeForm({ open, onClose, onSuccess }: TradeFormProps) {
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Adding...' : 'Add Trade'}
+              {isSubmitting ? (editTrade ? 'Updating...' : 'Adding...') : (editTrade ? 'Update Trade' : 'Add Trade')}
             </Button>
           </DialogFooter>
         </form>

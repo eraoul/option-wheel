@@ -1,5 +1,7 @@
 export type TradeType = 'PUT' | 'CALL';
-export type TradeStatus = 'OPEN' | 'CLOSED' | 'ASSIGNED' | 'EXPIRED';
+export type TradeStatus = 'OPEN' | 'CLOSED' | 'ASSIGNED' | 'EXPIRED' | 'ROLLED';
+export type TradeAction = 'SELL_TO_OPEN' | 'BUY_TO_CLOSE' | 'BUY_TO_OPEN' | 'SELL_TO_CLOSE';
+export type CloseMethod = 'BUYBACK' | 'ROLL' | 'EXPIRED' | 'ASSIGNED';
 export type PositionStatus = 'OPEN' | 'SOLD';
 export type AcquisitionType = 'ASSIGNED_PUT' | 'ASSIGNED_CALL' | 'DIRECT_PURCHASE';
 
@@ -7,6 +9,7 @@ export interface Trade {
   id: string;
   ticker: string;
   type: TradeType;
+  action: TradeAction;
   strike: number;
   expiration: string; // ISO date string
   premium: number;
@@ -14,9 +17,12 @@ export interface Trade {
   openDate: string; // ISO date string
   closeDate?: string | null;
   closePremium?: number | null;
+  closeMethod?: CloseMethod | null;
   status: TradeStatus;
   notes?: string | null;
   positionId?: string | null;
+  rolledToTradeId?: string | null;
+  rolledFromTradeId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,10 +45,20 @@ export interface Position {
 export interface TradeFormData {
   ticker: string;
   type: TradeType;
+  action: TradeAction;
   strike: number;
   expiration: string;
   premium: number;
   quantity: number;
+  notes?: string;
+}
+
+export interface ShareTransactionFormData {
+  ticker: string;
+  shares: number;
+  pricePerShare: number;
+  transactionDate: string;
+  transactionType: 'BUY' | 'SELL';
   notes?: string;
 }
 

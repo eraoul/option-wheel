@@ -14,14 +14,15 @@ export function createTrade(data: TradeFormData): Trade {
   const now = new Date().toISOString();
 
   const stmt = db.prepare(`
-    INSERT INTO trades (id, ticker, type, strike, expiration, premium, quantity, open_date, notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO trades (id, ticker, type, action, strike, expiration, premium, quantity, open_date, notes, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     id,
     data.ticker.toUpperCase(),
     data.type,
+    data.action,
     data.strike,
     data.expiration,
     data.premium,
@@ -87,13 +88,64 @@ export function closeTrade(id: string, closePremium: number): Trade {
   return updateTrade(id, {
     status: 'CLOSED',
     closeDate: new Date().toISOString(),
-    closePremium
+    closePremium,
+    closeMethod: 'BUYBACK'
   });
+}
+
+export function closeTradeWithMethod(
+  id: string,
+  method: 'BUYBACK' | 'EXPIRED' | 'ASSIGNED',
+  closePremium?: number,
+  positionId?: string
+): Trade {
+  const updates: Partial<Trade> = {
+    closeDate: new Date().toISOString(),
+    closeMethod: method
+  };
+
+  if (method === 'BUYBACK' && closePremium !== undefined) {
+    updates.closePremium = closePremium;
+    updates.status = 'CLOSED';
+  } else if (method === 'EXPIRED') {
+    updates.status = 'EXPIRED';
+    updates.closePremium = 0;
+  } else if (method === 'ASSIGNED' && positionId) {
+    updates.status = 'ASSIGNED';
+    updates.positionId = positionId;
+  }
+
+  return updateTrade(id, updates);
+}
+
+export function rollTrade(
+  oldTradeId: string,
+  newTradeData: TradeFormData
+): { oldTrade: Trade; newTrade: Trade } {
+  // Create the new trade
+  const newTrade = createTrade(newTradeData);
+
+  // Update the old trade to mark it as rolled
+  const oldTrade = updateTrade(oldTradeId, {
+    status: 'ROLLED',
+    closeDate: new Date().toISOString(),
+    closeMethod: 'ROLL',
+    rolledToTradeId: newTrade.id
+  });
+
+  // Link the new trade back to the old one
+  updateTrade(newTrade.id, {
+    rolledFromTradeId: oldTradeId
+  });
+
+  return { oldTrade, newTrade: getTrade(newTrade.id)! };
 }
 
 export function assignTrade(id: string, positionId: string): Trade {
   return updateTrade(id, {
     status: 'ASSIGNED',
+    closeMethod: 'ASSIGNED',
+    closeDate: new Date().toISOString(),
     positionId
   });
 }
@@ -298,6 +350,7 @@ function mapTradeFromDb(row: any): Trade {
     id: row.id,
     ticker: row.ticker,
     type: row.type,
+    action: row.action || 'SELL_TO_OPEN',
     strike: row.strike,
     expiration: row.expiration,
     premium: row.premium,
@@ -305,9 +358,12 @@ function mapTradeFromDb(row: any): Trade {
     openDate: row.open_date,
     closeDate: row.close_date,
     closePremium: row.close_premium,
+    closeMethod: row.close_method,
     status: row.status,
     notes: row.notes,
     positionId: row.position_id,
+    rolledToTradeId: row.rolled_to_trade_id,
+    rolledFromTradeId: row.rolled_from_trade_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
