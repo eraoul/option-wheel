@@ -23,6 +23,7 @@ interface PositionListProps {
 export function PositionList({ status = 'all', refreshKey }: PositionListProps) {
   const [positions, setPositions] = useState<Position[]>([]);
   const [prices, setPrices] = useState<Record<string, CurrentPrice>>({});
+  const [allocations, setAllocations] = useState<Record<string, any>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [editingPosition, setEditingPosition] = useState<Position | null>(null);
 
@@ -48,6 +49,13 @@ export function PositionList({ status = 'all', refreshKey }: PositionListProps) 
             pricesMap[price.ticker] = price;
           });
           setPrices(pricesMap);
+        }
+
+        // Fetch covered call allocations
+        const allocationsResponse = await fetch('/api/positions/allocation');
+        if (allocationsResponse.ok) {
+          const allocationsData = await allocationsResponse.json();
+          setAllocations(allocationsData);
         }
       }
     } catch (error) {
@@ -128,6 +136,7 @@ export function PositionList({ status = 'all', refreshKey }: PositionListProps) 
             <TableRow>
               <TableHead>Ticker</TableHead>
               <TableHead>Shares</TableHead>
+              <TableHead>Covered Calls</TableHead>
               <TableHead>Cost/Share</TableHead>
               <TableHead>Current Price</TableHead>
               <TableHead>Days Held</TableHead>
@@ -145,11 +154,33 @@ export function PositionList({ status = 'all', refreshKey }: PositionListProps) 
               const pnlData = calculateUnrealizedPnL(position);
               const daysHeld = calculateDaysHeld(position);
               const costPerShare = calculateCostPerShare(position);
+              const allocation = allocations[position.ticker];
 
               return (
                 <TableRow key={position.id}>
                   <TableCell className="font-medium">{position.ticker}</TableCell>
                   <TableCell>{position.shares.toLocaleString()}</TableCell>
+                  <TableCell>
+                    {allocation && allocation.totalLots > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">{allocation.allocatedLots}</span>
+                          <span className="text-muted-foreground"> / {allocation.totalLots} lots</span>
+                        </div>
+                        {allocation.unallocatedLots > 0 ? (
+                          <Badge variant="secondary" className="text-xs">
+                            {allocation.unallocatedLots} unallocated
+                          </Badge>
+                        ) : (
+                          <Badge variant="default" className="text-xs bg-green-600">
+                            Fully covered
+                          </Badge>
+                        )}
+                      </div>
+                    ) : (
+                      <Badge variant="outline" className="text-xs">No positions</Badge>
+                    )}
+                  </TableCell>
                   <TableCell>${costPerShare.toFixed(2)}</TableCell>
                   <TableCell>
                     {pnlData ? (

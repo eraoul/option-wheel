@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TickerInput } from '@/components/ui/ticker-input';
 import {
   Select,
   SelectContent,
@@ -128,13 +129,13 @@ export function PositionForm({ open, onClose, onSuccess, editPosition }: Positio
               <Label htmlFor="ticker" className="text-right">
                 Ticker
               </Label>
-              <Input
+              <TickerInput
                 id="ticker"
                 className="col-span-3"
                 placeholder="AAPL"
                 value={formData.ticker}
-                onChange={(e) =>
-                  setFormData({ ...formData, ticker: e.target.value.toUpperCase() })
+                onChange={(value) =>
+                  setFormData({ ...formData, ticker: value })
                 }
                 required
               />

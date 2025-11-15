@@ -103,7 +103,7 @@ export function CloseTradeDialog({ open, onClose, onSuccess, trade }: CloseTrade
             {closeMethod === 'BUYBACK' && (
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="closePremium" className="text-right">
-                  Close Premium
+                  Close Premium (per share)
                 </Label>
                 <Input
                   id="closePremium"
@@ -116,7 +116,7 @@ export function CloseTradeDialog({ open, onClose, onSuccess, trade }: CloseTrade
                   required
                 />
                 <div className="col-start-2 col-span-3 text-xs text-muted-foreground">
-                  Premium paid per share to close
+                  Enter price per share paid to close the position
                 </div>
               </div>
             )}
