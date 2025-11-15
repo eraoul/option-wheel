@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPortfolioMetrics, getTickerMetrics, getAllTickers } from '@/lib/db-operations';
+import { getPortfolioMetrics, getTickerMetrics, getAllTickers, getEnhancedPortfolioMetrics } from '@/lib/db-operations';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,6 +14,11 @@ export async function GET(request: NextRequest) {
 
     if (ticker) {
       const metrics = getTickerMetrics(ticker);
+      return NextResponse.json(metrics);
+    }
+
+    if (type === 'enhanced') {
+      const metrics = getEnhancedPortfolioMetrics();
       return NextResponse.json(metrics);
     }
 
