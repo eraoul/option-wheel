@@ -5,7 +5,10 @@ import type {
   TradeFormData,
   PositionFormData,
   TickerMetrics,
-  PortfolioMetrics
+  PortfolioMetrics,
+  AccountSettings,
+  CurrentPrice,
+  EnhancedPortfolioMetrics
 } from './types';
 
 // Trade Operations
@@ -411,4 +414,158 @@ function calculateAvgDaysInTrade(trades: Trade[]): number {
   }, 0);
 
   return totalDays / completedTrades.length;
+}
+
+// Account Settings Operations
+export function getAccountSettings(): AccountSettings {
+  const stmt = db.prepare('SELECT * FROM account_settings WHERE id = ?');
+  const row = stmt.get('default') as any;
+  return {
+    id: row.id,
+    totalCapital: row.total_capital,
+    cashAvailable: row.cash_available,
+    updatedAt: row.updated_at
+  };
+}
+
+export function updateAccountSettings(totalCapital: number, cashAvailable: number): AccountSettings {
+  const now = new Date().toISOString();
+  const stmt = db.prepare(`
+    UPDATE account_settings 
+    SET total_capital = ?, cash_available = ?, updated_at = ?
+    WHERE id = 'default'
+  `);
+  stmt.run(totalCapital, cashAvailable, now);
+  return getAccountSettings();
+}
+
+// Current Prices Operations
+export function upsertCurrentPrice(ticker: string, data: Partial<CurrentPrice>): void {
+  const now = new Date().toISOString();
+  const stmt = db.prepare(`
+    INSERT INTO current_prices (ticker, stock_price, option_price, strike, expiration, option_type, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(ticker) DO UPDATE SET
+      stock_price = COALESCE(excluded.stock_price, stock_price),
+      option_price = COALESCE(excluded.option_price, option_price),
+      strike = COALESCE(excluded.strike, strike),
+      expiration = COALESCE(excluded.expiration, expiration),
+      option_type = COALESCE(excluded.option_type, option_type),
+      updated_at = excluded.updated_at
+  `);
+  stmt.run(
+    ticker.toUpperCase(),
+    data.stockPrice ?? null,
+    data.optionPrice ?? null,
+    data.strike ?? null,
+    data.expiration ?? null,
+    data.optionType ?? null,
+    now
+  );
+}
+
+export function getCurrentPrice(ticker: string): CurrentPrice | null {
+  const stmt = db.prepare('SELECT * FROM current_prices WHERE ticker = ?');
+  const row = stmt.get(ticker.toUpperCase()) as any;
+  if (!row) return null;
+  return {
+    ticker: row.ticker,
+    stockPrice: row.stock_price,
+    optionPrice: row.option_price,
+    strike: row.strike,
+    expiration: row.expiration,
+    optionType: row.option_type,
+    updatedAt: row.updated_at
+  };
+}
+
+export function getAllCurrentPrices(): CurrentPrice[] {
+  const stmt = db.prepare('SELECT * FROM current_prices ORDER BY ticker');
+  const rows = stmt.all() as any[];
+  return rows.map(row => ({
+    ticker: row.ticker,
+    stockPrice: row.stock_price,
+    optionPrice: row.option_price,
+    strike: row.strike,
+    expiration: row.expiration,
+    optionType: row.option_type,
+    updatedAt: row.updated_at
+  }));
+}
+
+// Enhanced Portfolio Metrics with Cash Management
+export function getEnhancedPortfolioMetrics(): EnhancedPortfolioMetrics {
+  const basicMetrics = getPortfolioMetrics();
+  const accountSettings = getAccountSettings();
+  
+  // Calculate cash used for CSPs (open put positions)
+  const openPutTrades = getAllTrades().filter(t => 
+    t.status === 'OPEN' && t.type === 'PUT' && t.action === 'SELL_TO_OPEN'
+  );
+  
+  const cashUsedForCSPs = openPutTrades.reduce((sum, t) => {
+    // Cash secured = strike price * quantity * 100 shares per contract
+    return sum + (t.strike * t.quantity * 100);
+  }, 0);
+
+  const percentCashAvailable = accountSettings.totalCapital > 0 
+    ? (accountSettings.cashAvailable / accountSettings.totalCapital) * 100
+    : 0;
+
+  const capitalUtilization = accountSettings.totalCapital > 0
+    ? ((accountSettings.totalCapital - accountSettings.cashAvailable) / accountSettings.totalCapital) * 100
+    : 0;
+
+  return {
+    ...basicMetrics,
+    totalCapital: accountSettings.totalCapital,
+    cashAvailable: accountSettings.cashAvailable,
+    cashUsedForCSPs,
+    percentCashAvailable,
+    capitalUtilization
+  };
+}
+
+// Calculate DTE (Days to Expiration)
+export function calculateDTE(expirationDate: string): number {
+  const now = new Date();
+  const exp = new Date(expirationDate);
+  const days = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, days);
+}
+
+// Calculate unrealized P/L for a position
+export function calculateUnrealizedPnL(position: Position): number {
+  const currentPrice = getCurrentPrice(position.ticker);
+  if (!currentPrice || !currentPrice.stockPrice) return 0;
+  
+  const currentValue = currentPrice.stockPrice * position.shares;
+  const unrealizedPnL = currentValue - position.costBasis;
+  return unrealizedPnL;
+}
+
+// Calculate unrealized P/L for an option trade
+export function calculateTradeUnrealizedPnL(trade: Trade): number {
+  if (trade.status !== 'OPEN') return 0;
+  
+  const currentPrice = getCurrentPrice(trade.ticker);
+  if (!currentPrice) return 0;
+  
+  // For sold options (STO), we want the option to decrease in value
+  // Unrealized P/L = premium collected - current option price
+  if (trade.action === 'SELL_TO_OPEN' || trade.action === 'SELL_TO_CLOSE') {
+    const collectedPremium = trade.premium * trade.quantity * 100;
+    const currentValue = (currentPrice.optionPrice || 0) * trade.quantity * 100;
+    return collectedPremium - currentValue;
+  }
+  
+  // For bought options (BTO), we want the option to increase in value
+  // Unrealized P/L = current option price - premium paid
+  if (trade.action === 'BUY_TO_OPEN' || trade.action === 'BUY_TO_CLOSE') {
+    const paidPremium = trade.premium * trade.quantity * 100;
+    const currentValue = (currentPrice.optionPrice || 0) * trade.quantity * 100;
+    return currentValue - paidPremium;
+  }
+  
+  return 0;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,15 +19,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { PositionFormData, AcquisitionType } from '@/lib/types';
+import type { PositionFormData, AcquisitionType, Position } from '@/lib/types';
 
 interface PositionFormProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  editPosition?: Position | null;
 }
 
-export function PositionForm({ open, onClose, onSuccess }: PositionFormProps) {
+export function PositionForm({ open, onClose, onSuccess, editPosition }: PositionFormProps) {
   const [formData, setFormData] = useState<PositionFormData>({
     ticker: '',
     shares: 100,
@@ -38,6 +39,28 @@ export function PositionForm({ open, onClose, onSuccess }: PositionFormProps) {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (editPosition) {
+      setFormData({
+        ticker: editPosition.ticker,
+        shares: editPosition.shares,
+        costBasis: editPosition.costBasis,
+        acquiredDate: editPosition.acquiredDate.split('T')[0],
+        acquisitionType: editPosition.acquisitionType,
+        notes: editPosition.notes || '',
+      });
+    } else {
+      setFormData({
+        ticker: '',
+        shares: 100,
+        costBasis: 0,
+        acquiredDate: new Date().toISOString().split('T')[0],
+        acquisitionType: 'ASSIGNED_PUT',
+        notes: '',
+      });
+    }
+  }, [editPosition, open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,28 +75,33 @@ export function PositionForm({ open, onClose, onSuccess }: PositionFormProps) {
     }
 
     try {
-      const response = await fetch('/api/positions', {
-        method: 'POST',
+      const url = editPosition ? `/api/positions/${editPosition.id}` : '/api/positions';
+      const method = editPosition ? 'PATCH' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || 'Failed to create position');
+        throw new Error(data.error || `Failed to ${editPosition ? 'update' : 'create'} position`);
       }
 
       onSuccess();
-      setFormData({
-        ticker: '',
-        shares: 100,
-        costBasis: 0,
-        acquiredDate: new Date().toISOString().split('T')[0],
-        acquisitionType: 'ASSIGNED_PUT',
-        notes: '',
-      });
+      if (!editPosition) {
+        setFormData({
+          ticker: '',
+          shares: 100,
+          costBasis: 0,
+          acquiredDate: new Date().toISOString().split('T')[0],
+          acquisitionType: 'ASSIGNED_PUT',
+          notes: '',
+        });
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create position');
+      setError(err instanceof Error ? err.message : `Failed to ${editPosition ? 'update' : 'create'} position`);
     } finally {
       setIsSubmitting(false);
     }
@@ -83,9 +111,9 @@ export function PositionForm({ open, onClose, onSuccess }: PositionFormProps) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[525px]">
         <DialogHeader>
-          <DialogTitle>Add Stock Position</DialogTitle>
+          <DialogTitle>{editPosition ? 'Edit' : 'Add'} Stock Position</DialogTitle>
           <DialogDescription>
-            Record a stock position (in lots of 100 shares)
+            {editPosition ? 'Update' : 'Record'} a stock position (in lots of 100 shares)
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -212,7 +240,7 @@ export function PositionForm({ open, onClose, onSuccess }: PositionFormProps) {
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Adding...' : 'Add Position'}
+              {isSubmitting ? (editPosition ? 'Updating...' : 'Adding...') : (editPosition ? 'Update Position' : 'Add Position')}
             </Button>
           </DialogFooter>
         </form>

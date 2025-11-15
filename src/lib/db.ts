@@ -50,11 +50,33 @@ export function initDatabase() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS account_settings (
+      id TEXT PRIMARY KEY DEFAULT 'default',
+      total_capital REAL NOT NULL DEFAULT 0,
+      cash_available REAL NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS current_prices (
+      ticker TEXT PRIMARY KEY,
+      stock_price REAL,
+      option_price REAL,
+      strike REAL,
+      expiration TEXT,
+      option_type TEXT CHECK(option_type IN ('PUT', 'CALL')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_trades_ticker ON trades(ticker);
     CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
     CREATE INDEX IF NOT EXISTS idx_trades_expiration ON trades(expiration);
     CREATE INDEX IF NOT EXISTS idx_positions_ticker ON positions(ticker);
     CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
+    CREATE INDEX IF NOT EXISTS idx_current_prices_ticker ON current_prices(ticker);
+
+    -- Initialize default account settings if not exists
+    INSERT OR IGNORE INTO account_settings (id, total_capital, cash_available)
+    VALUES ('default', 0, 0);
   `);
 
   // Migrate existing database if needed

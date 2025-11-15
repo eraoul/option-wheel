@@ -96,3 +96,28 @@ export interface PortfolioMetrics {
   winRate: number;
   avgPremiumPerTrade: number;
 }
+
+export interface AccountSettings {
+  id: string;
+  totalCapital: number;
+  cashAvailable: number;
+  updatedAt: string;
+}
+
+export interface CurrentPrice {
+  ticker: string;
+  stockPrice?: number | null;
+  optionPrice?: number | null;
+  strike?: number | null;
+  expiration?: string | null;
+  optionType?: 'PUT' | 'CALL' | null;
+  updatedAt: string;
+}
+
+export interface EnhancedPortfolioMetrics extends PortfolioMetrics {
+  totalCapital: number;
+  cashAvailable: number;
+  cashUsedForCSPs: number;
+  percentCashAvailable: number;
+  capitalUtilization: number;
+}
