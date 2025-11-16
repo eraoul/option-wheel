@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TickerInput } from '@/components/ui/ticker-input';
 import {
   Select,
   SelectContent,
@@ -129,13 +130,13 @@ export function TradeForm({ open, onClose, onSuccess, editTrade }: TradeFormProp
               <Label htmlFor="ticker" className="text-right">
                 Ticker
               </Label>
-              <Input
+              <TickerInput
                 id="ticker"
                 className="col-span-3"
                 placeholder="AAPL"
                 value={formData.ticker}
-                onChange={(e) =>
-                  setFormData({ ...formData, ticker: e.target.value.toUpperCase() })
+                onChange={(value) =>
+                  setFormData({ ...formData, ticker: value })
                 }
                 required
               />
@@ -219,7 +220,7 @@ export function TradeForm({ open, onClose, onSuccess, editTrade }: TradeFormProp
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="premium" className="text-right">
-                Premium
+                Premium (per share)
               </Label>
               <Input
                 id="premium"
@@ -234,7 +235,7 @@ export function TradeForm({ open, onClose, onSuccess, editTrade }: TradeFormProp
                 required
               />
               <div className="col-start-2 col-span-3 text-xs text-muted-foreground">
-                Premium per share (x100 per contract)
+                Enter price per share (will be multiplied by 100 per contract)
               </div>
             </div>
 

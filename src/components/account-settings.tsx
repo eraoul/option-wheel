@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { AccountSettings } from '@/lib/types';
-import { DollarSign, Wallet } from 'lucide-react';
+import { DollarSign, Wallet, Plus, Minus } from 'lucide-react';
 
 export function AccountSettings() {
   const [settings, setSettings] = useState<AccountSettings | null>(null);
@@ -14,6 +14,9 @@ export function AccountSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDepositForm, setShowDepositForm] = useState(false);
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [transactionAmount, setTransactionAmount] = useState<number>(0);
   const [formData, setFormData] = useState({
     totalCapital: 0,
     cashAvailable: 0,
@@ -78,6 +81,83 @@ export function AccountSettings() {
     }
     setIsEditing(false);
     setError(null);
+  };
+
+  const handleDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settings || transactionAmount <= 0) return;
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const newTotalCapital = settings.totalCapital + transactionAmount;
+      const newCashAvailable = settings.cashAvailable + transactionAmount;
+
+      const response = await fetch('/api/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          totalCapital: newTotalCapital,
+          cashAvailable: newCashAvailable,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to deposit cash');
+      }
+
+      const updatedSettings = await response.json();
+      setSettings(updatedSettings);
+      setShowDepositForm(false);
+      setTransactionAmount(0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to deposit cash');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settings || transactionAmount <= 0) return;
+
+    if (transactionAmount > settings.cashAvailable) {
+      setError('Withdrawal amount exceeds available cash');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const newTotalCapital = settings.totalCapital - transactionAmount;
+      const newCashAvailable = settings.cashAvailable - transactionAmount;
+
+      const response = await fetch('/api/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          totalCapital: newTotalCapital,
+          cashAvailable: newCashAvailable,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to withdraw cash');
+      }
+
+      const updatedSettings = await response.json();
+      setSettings(updatedSettings);
+      setShowWithdrawForm(false);
+      setTransactionAmount(0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to withdraw cash');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -148,9 +228,109 @@ export function AccountSettings() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Cash Management</CardTitle>
+          <CardDescription>
+            Deposit or withdraw cash from your trading account
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="bg-destructive/15 text-destructive px-4 py-2 rounded-md text-sm mb-4">
+              {error}
+            </div>
+          )}
+
+          {!showDepositForm && !showWithdrawForm ? (
+            <div className="flex gap-2">
+              <Button onClick={() => setShowDepositForm(true)} className="flex-1">
+                <Plus className="h-4 w-4 mr-2" />
+                Deposit Cash
+              </Button>
+              <Button onClick={() => setShowWithdrawForm(true)} variant="outline" className="flex-1">
+                <Minus className="h-4 w-4 mr-2" />
+                Withdraw Cash
+              </Button>
+            </div>
+          ) : showDepositForm ? (
+            <form onSubmit={handleDeposit} className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="depositAmount">Deposit Amount</Label>
+                <Input
+                  id="depositAmount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="1000.00"
+                  value={transactionAmount || ''}
+                  onChange={(e) => setTransactionAmount(parseFloat(e.target.value) || 0)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  This will increase both your total capital and available cash
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? 'Processing...' : 'Confirm Deposit'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDepositForm(false);
+                    setTransactionAmount(0);
+                    setError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleWithdraw} className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="withdrawAmount">Withdrawal Amount</Label>
+                <Input
+                  id="withdrawAmount"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={settings?.cashAvailable || 0}
+                  placeholder="1000.00"
+                  value={transactionAmount || ''}
+                  onChange={(e) => setTransactionAmount(parseFloat(e.target.value) || 0)}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Available to withdraw: {settings ? formatCurrency(settings.cashAvailable) : '$0.00'}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? 'Processing...' : 'Confirm Withdrawal'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowWithdrawForm(false);
+                    setTransactionAmount(0);
+                    setError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Account Settings</CardTitle>
           <CardDescription>
-            Manage your trading capital and cash availability
+            Set your initial capital or adjust account balances
           </CardDescription>
         </CardHeader>
         <CardContent>

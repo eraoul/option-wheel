@@ -569,3 +569,32 @@ export function calculateTradeUnrealizedPnL(trade: Trade): number {
   
   return 0;
 }
+
+// Calculate covered call allocation for a ticker
+export function getCoveredCallAllocation(ticker: string): {
+  totalShares: number;
+  allocatedShares: number;
+  unallocatedShares: number;
+  totalLots: number;
+  allocatedLots: number;
+  unallocatedLots: number;
+} {
+  // Get all open positions for this ticker
+  const openPositions = getPositionsByTicker(ticker).filter(p => p.status === 'OPEN');
+  const totalShares = openPositions.reduce((sum, p) => sum + p.shares, 0);
+
+  // Get all open CALL trades for this ticker (covered calls)
+  const openCalls = getActiveTradesByTicker(ticker).filter(t => t.type === 'CALL' && t.action === 'SELL_TO_OPEN');
+  const allocatedShares = openCalls.reduce((sum, t) => sum + (t.quantity * 100), 0);
+
+  const unallocatedShares = Math.max(0, totalShares - allocatedShares);
+
+  return {
+    totalShares,
+    allocatedShares,
+    unallocatedShares,
+    totalLots: totalShares / 100,
+    allocatedLots: allocatedShares / 100,
+    unallocatedLots: unallocatedShares / 100,
+  };
+}

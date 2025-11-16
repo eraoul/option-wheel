@@ -124,7 +124,7 @@ export function RollTradeDialog({ open, onClose, onSuccess, trade }: RollTradeDi
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="newPremium" className="text-right">
-                New Premium
+                New Premium (per share)
               </Label>
               <Input
                 id="newPremium"
@@ -137,7 +137,7 @@ export function RollTradeDialog({ open, onClose, onSuccess, trade }: RollTradeDi
                 required
               />
               <div className="col-start-2 col-span-3 text-xs text-muted-foreground">
-                Net premium per share for the rolled position
+                Enter net premium per share for the rolled position
               </div>
             </div>
 
